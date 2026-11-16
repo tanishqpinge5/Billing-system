@@ -165,38 +165,70 @@ $('addItem').onclick=()=>addRow('',1,0);$('clearItems').onclick=()=>{$('items').
 $('saveBill').onclick=save;$('printBill').onclick=()=>window.print();
 $('shareBill').onclick=async()=>{const c=lastCalc;const txt=[ $('shop').value, ...c.rows.map(x=>`${x.name}: ${x.qty} × ₹${x.rate} = ${money(x.qty*x.rate)}`),`Subtotal: ${money(c.subtotal)}`,`Discount: ${money(c.disc)}`,`Delivery: ${money(c.delivery)}`,`Delivery waiver: ${money(c.waiver)}`,`TOTAL: ${money(c.total)}`].join('\n');if(navigator.share){try{await navigator.share({title:'Bill',text:txt})}catch(e){}}else if(navigator.clipboard){await navigator.clipboard.writeText(txt);alert('Bill text copied.')}else alert(txt)};
 async function createBillPdf(){
- if(!window.jspdf || !window.jspdf.jsPDF) throw new Error('PDF generator did not load. Connect to the internet and try again.');
- const {jsPDF}=window.jspdf;
- const doc=new jsPDF({unit:'mm',format:[80,260]});
- const left=6,right=74;
- let y=12;
- doc.setFont('helvetica','bold');doc.setFontSize(15);
- doc.text($('shop').value||"Shrinath's Kitchen",40,y,{align:'center',maxWidth:68});y+=7;
- doc.setFont('helvetica','normal');doc.setFontSize(9);
- if($('subtitle').value){doc.text($('subtitle').value,40,y,{align:'center'});y+=6}
- doc.setFontSize(8);
- doc.text('Bill: '+($('billNo').value||'—'),left,y);
- doc.text('Date: '+($('date').value||''),right,y,{align:'right'});y+=5;
- if($('customerName').value.trim()){doc.text('Customer: '+$('customerName').value.trim(),left,y);y+=5}
- if($('customerPhone').value.trim()){doc.text('Phone: '+$('customerPhone').value.trim(),left,y);y+=5}
- doc.setLineDash([1,1],0);doc.line(left,y,right,y);y+=6;
- doc.setFont('helvetica','bold');doc.text('ITEM',left,y);doc.text('AMOUNT',right,y,{align:'right'});y+=5;
- doc.setFont('helvetica','normal');
- for(const item of lastCalc.rows){
-  const lines=doc.splitTextToSize(item.name||'Item',43);
-  doc.text(lines,left,y);doc.text(money(item.qty*item.rate),right,y,{align:'right'});
-  y+=Math.max(5,lines.length*4);
-  doc.setFontSize(7);doc.text(`${item.qty} x ${money(item.rate)}`,left,y);doc.setFontSize(8);y+=5;
- }
- doc.line(left,y,right,y);y+=6;
- [['Subtotal',lastCalc.subtotal],['Discount',-lastCalc.disc],['Delivery',lastCalc.delivery],['Delivery waiver',-lastCalc.waiver]].forEach(([label,value])=>{
-  doc.text(label,left,y);doc.text((value<0?'- ':'')+money(Math.abs(value)),right,y,{align:'right'});y+=5;
+ // Render the receipt to a canvas, then wrap its JPEG image in a minimal PDF.
+ // This avoids external PDF libraries/CDN dependencies and preserves Unicode text.
+ const rows=lastCalc.rows||[];
+ const scale=3, canvas=document.createElement('canvas'), ctx=canvas.getContext('2d');
+ const W=720, margin=42, lineH=34;
+ const wrap=(text,maxWidth,font)=>{
+  ctx.font=font;const words=String(text).split(/\s+/);let lines=[],line='';
+  for(const word of words){const test=line?line+' '+word:word;if(ctx.measureText(test).width>maxWidth&&line){lines.push(line);line=word}else line=test}
+  if(line)lines.push(line);return lines;
+ };
+ const titleFont='bold 40px Arial, sans-serif', bodyFont='26px Arial, sans-serif', smallFont='20px Arial, sans-serif';
+ let height=150;
+ height+=rows.reduce((sum,item)=>sum+Math.max(1,wrap(item.name||'Item',420,bodyFont).length)*34+30,0);
+ height+=8*lineH+100;
+ canvas.width=W;canvas.height=height*scale;
+ ctx.scale(scale,scale);ctx.fillStyle='#fff';ctx.fillRect(0,0,W,height);ctx.fillStyle='#111';ctx.textBaseline='top';
+ let y=32;
+ ctx.textAlign='center';ctx.font=titleFont;ctx.fillText($('shop').value||"Shrinath's Kitchen",W/2,y);y+=52;
+ ctx.font=smallFont;if($('subtitle').value)ctx.fillText($('subtitle').value,W/2,y);y+=34;
+ ctx.textAlign='left';ctx.font=smallFont;
+ ctx.fillText('Bill: '+($('billNo').value||'—'),margin,y);
+ ctx.textAlign='right';ctx.fillText('Date: '+($('date').value||''),W-margin,y);y+=34;
+ ctx.textAlign='left';
+ if($('customerName').value.trim()){ctx.fillText('Customer: '+$('customerName').value.trim(),margin,y);y+=30}
+ if($('customerPhone').value.trim()){ctx.fillText('Phone: '+$('customerPhone').value.trim(),margin,y);y+=30}
+ const rule=()=>{ctx.setLineDash([7,6]);ctx.beginPath();ctx.moveTo(margin,y);ctx.lineTo(W-margin,y);ctx.strokeStyle='#111';ctx.lineWidth=1.5;ctx.stroke();ctx.setLineDash([]);y+=20};
+ rule();
+ ctx.font='bold 22px Arial, sans-serif';ctx.textAlign='left';ctx.fillText('ITEM',margin,y);ctx.textAlign='right';ctx.fillText('AMOUNT',W-margin,y);y+=34;
+ rows.forEach(item=>{
+  ctx.textAlign='left';ctx.font=bodyFont;
+  const lines=wrap(item.name||'Item',420,bodyFont);
+  lines.forEach(line=>{ctx.fillText(line,margin,y);y+=34});
+  ctx.textAlign='right';ctx.font='bold 24px Arial, sans-serif';ctx.fillText(money(item.qty*item.rate),W-margin,y-34);
+  ctx.textAlign='left';ctx.font=smallFont;ctx.fillText(`${item.qty} × ${money(item.rate)}`,margin,y);y+=34;
  });
- doc.setFont('helvetica','bold');doc.setFontSize(12);
- doc.text('TOTAL',left,y+2);doc.text(money(lastCalc.total),right,y+2,{align:'right'});y+=10;
- doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text('Thank you! Visit again.',40,y,{align:'center'});
- const blob=doc.output('blob');
- return new File([blob],`Shrinaths-Kitchen-${($('billNo').value||'Bill').replace(/[^a-z0-9_-]/gi,'_')}.pdf`,{type:'application/pdf'});
+ rule();
+ const sums=[['Subtotal',lastCalc.subtotal],['Discount',-lastCalc.disc],['Delivery',lastCalc.delivery],['Delivery waiver',-lastCalc.waiver]];
+ ctx.font=bodyFont;
+ sums.forEach(([label,value])=>{ctx.textAlign='left';ctx.fillText(label,margin,y);ctx.textAlign='right';ctx.fillText((value<0?'− ':'')+money(Math.abs(value)),W-margin,y);y+=36});
+ ctx.fillStyle='#111';ctx.fillRect(margin,y-5,W-margin*2,54);ctx.fillStyle='#fff';ctx.font='bold 30px Arial, sans-serif';ctx.textAlign='left';ctx.fillText('TOTAL',margin+14,y+7);ctx.textAlign='right';ctx.fillText(money(lastCalc.total),W-margin-14,y+7);y+=68;
+ ctx.fillStyle='#111';ctx.font=smallFont;ctx.textAlign='center';ctx.fillText('Thank you! Visit again.',W/2,y);
+ // Crop canvas to the actual receipt height.
+ const finalCanvas=document.createElement('canvas');finalCanvas.width=W*scale;finalCanvas.height=(y+42)*scale;
+ finalCanvas.getContext('2d').drawImage(canvas,0,0,finalCanvas.width,finalCanvas.height,0,0,finalCanvas.width,finalCanvas.height);
+ const jpeg=finalCanvas.toDataURL('image/jpeg',0.92).split(',')[1];
+ const binary=atob(jpeg), imageBytes=new Uint8Array(binary.length);
+ for(let i=0;i<binary.length;i++)imageBytes[i]=binary.charCodeAt(i);
+ const pageW=226.77, pageH=(finalCanvas.height/finalCanvas.width)*pageW;
+ const enc=new TextEncoder(), chunks=[], offsets=[0];let byteCount=0;
+ const pushBytes=b=>{chunks.push(b);byteCount+=b.length};
+ const pushText=s=>pushBytes(enc.encode(s));
+ pushText('%PDF-1.4\n');
+ function obj(n,body){offsets[n]=byteCount;pushText(`${n} 0 obj\n${body}\nendobj\n`)}
+ obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+ obj(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+ obj(3,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW.toFixed(2)} ${pageH.toFixed(2)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+ offsets[4]=byteCount;pushText(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${finalCanvas.width} /Height ${finalCanvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`);pushBytes(imageBytes);pushText('\nendstream\nendobj\n');
+ const content=`q\n${pageW.toFixed(2)} 0 0 ${pageH.toFixed(2)} 0 0 cm\n/Im0 Do\nQ\n`;
+ obj(5,`<< /Length ${enc.encode(content).length} >>\nstream\n${content}endstream`);
+ const xref=byteCount;pushText('xref\n0 6\n0000000000 65535 f \n');
+ for(let i=1;i<=5;i++)pushText(String(offsets[i]).padStart(10,'0')+' 00000 n \n');
+ pushText(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+ const pdfBytes=new Uint8Array(byteCount);let pos=0;for(const chunk of chunks){pdfBytes.set(chunk,pos);pos+=chunk.length}
+ return new File([pdfBytes],`Shrinaths-Kitchen-${($('billNo').value||'Bill').replace(/[^a-z0-9_-]/gi,'_')}.pdf`,{type:'application/pdf'});
 }
 $('whatsappBill').onclick=async()=>{
  let phone=$('customerPhone').value.trim().replace(/\D/g,'');
