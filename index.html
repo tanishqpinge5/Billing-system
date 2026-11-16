@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<title>Shrinath's Kitchen — Bill Maker</title>
+<style>
+:root{--ink:#151515;--muted:#6b7280;--line:#e5e7eb;--paper:#fff;--bg:#f3f4f6;--accent:#171717}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{background:#111;color:#fff;padding:17px 16px;position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0;font-weight:750}header p{margin:2px 0 0;color:#c9c9c9;font-size:12px}
+main{max-width:900px;margin:auto;padding:14px;display:grid;gap:14px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px;box-shadow:0 2px 8px #00000008}
+h2{font-size:16px;margin:0 0 12px}
+label{display:block;font-size:12px;font-weight:650;color:#555;margin:0 0 5px}
+input,select,textarea{font:inherit;width:100%;min-width:0;border:1px solid #d1d5db;border-radius:9px;padding:10px;background:#fff;color:#111}
+input:focus,select:focus{outline:2px solid #999;outline-offset:1px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{min-width:0}
+.items-head,.item-row{display:grid;grid-template-columns:minmax(0,1fr) 72px 90px 82px 32px;gap:7px;align-items:end}
+.items-head{font-size:11px;color:#666;font-weight:700;margin-bottom:6px}
+.item-row{margin-bottom:9px}
+.item-row input{padding:9px 7px}
+.amount{font-size:13px;font-weight:700;text-align:right;padding:10px 0;white-space:nowrap}
+button{border:0;border-radius:10px;padding:11px 13px;font:700 14px system-ui;cursor:pointer}
+.primary{background:#111;color:#fff}.secondary{background:#eee;color:#111}.danger{background:#fee2e2;color:#991b1b;padding:8px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.summary{display:grid;gap:8px}.sumrow{display:flex;justify-content:space-between;gap:12px;font-size:14px}.sumrow strong{font-variant-numeric:tabular-nums}
+.total{border-top:2px dashed #222;padding-top:11px;margin-top:3px;font-size:20px;font-weight:850}
+.hint{color:var(--muted);font-size:12px;margin:8px 0 0}
+.receipt-wrap{background:#e9e9e9;padding:12px;border-radius:12px}
+.receipt{max-width:440px;margin:auto;background:#fff;padding:25px 20px;border:1px solid #ddd;color:#111;box-shadow:0 2px 12px #0001}
+.receipt-title{text-align:center;font-size:25px;font-weight:900;text-decoration:underline;text-underline-offset:7px;margin:0 0 3px}
+.receipt-sub{text-align:center;font-size:12px;margin:8px 0 20px}
+.receipt-meta{display:flex;justify-content:space-between;font-size:11px;color:#555;margin-bottom:13px}
+.rline{border-top:1px dashed #222;margin:10px 0}
+.ritem{display:flex;justify-content:space-between;gap:12px;margin:12px 0;font-size:14px}
+.rname{font-weight:700;overflow-wrap:anywhere}.rsub{font-size:11px;color:#555;font-weight:400}
+.rprice{white-space:nowrap;font-weight:750}
+.rtotal{background:#111;color:#fff;padding:10px 12px;display:flex;justify-content:space-between;font-size:18px;font-weight:850;margin-top:12px}
+.discount-note{text-align:center;font-size:12px;margin-top:12px;font-weight:700}
+.saved-list{display:grid;gap:8px}.saved{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);padding:10px;border-radius:10px}.saved small{display:block;color:#666}
+.empty{color:#777;font-size:13px}
+@media(max-width:430px){main{padding:9px}.panel{padding:12px}.items-head,.item-row{grid-template-columns:minmax(0,1fr) 54px 76px 66px 28px;gap:4px}.items-head{font-size:10px}.item-row input{font-size:13px;padding:8px 5px}.amount{font-size:12px}.receipt{padding:20px 14px}}
+@media print{
+ body{background:#fff}.no-print,header,main>.panel:not(.preview-panel){display:none!important}
+ main{display:block;padding:0;margin:0}.preview-panel{border:0;padding:0;box-shadow:none}.receipt-wrap{background:#fff;padding:0}.receipt{box-shadow:none;border:0;max-width:none;width:80mm;padding:5mm 4mm}
+ @page{size:80mm auto;margin:4mm}
+}
+</style>
+</head>
+<body>
+<header><h1>Shrinath's Kitchen — Bill Maker</h1><p>Offline bill creator · Works on your phone · Data stays on this device</p></header>
+<main>
+<section class="panel">
+<h2>1. Shop & bill details</h2>
+<div class="grid2">
+ <div class="field"><label>Shop name</label><input id="shop" value="Shrinath's Kitchen"></div>
+ <div class="field"><label>Subtitle</label><input id="subtitle" value="Maharashtrian"></div>
+ <div class="field"><label>Bill number</label><input id="billNo" placeholder="Auto-generated"></div>
+ <div class="field"><label>Date</label><input id="date" type="date"></div>
+</div>
+</section>
+<section class="panel">
+<h2>2. Add items</h2>
+<div class="items-head"><span>ITEM NAME</span><span>QTY</span><span>RATE ₹</span><span>AMOUNT</span><span></span></div>
+<div id="items"></div>
+<div class="actions no-print"><button class="secondary" id="addItem">＋ Add item</button><button class="secondary" id="clearItems">Clear items</button></div>
+<p class="hint">Enter quantity and rate. Amount is calculated automatically. Examples: 25 roti × ₹15, 2.6 kg × ₹320.</p>
+</section>
+<section class="panel">
+<h2>3. Discount & delivery</h2>
+<div class="grid2">
+ <div class="field"><label>Discount type</label><select id="discountType"><option value="none">No discount</option><option value="percent">Percentage (%)</option><option value="fixed">Fixed amount (₹)</option></select></div>
+ <div class="field"><label>Discount value</label><input id="discountValue" type="number" min="0" step="0.01" value="0"></div>
+ <div class="field"><label>Delivery charge (₹)</label><input id="delivery" type="number" min="0" step="0.01" value="0"></div>
+ <div class="field"><label>Delivery waiver / discount (₹)</label><input id="deliveryWaiver" type="number" min="0" step="0.01" value="0"></div>
+</div>
+<p class="hint">For example, set delivery charge ₹40 and waiver ₹40 to show ₹40 crossed out and ₹0 payable.</p>
+</section>
+<section class="panel">
+<h2>4. Bill total</h2>
+<div class="summary">
+ <div class="sumrow"><span>Items subtotal</span><strong id="subtotal">₹0.00</strong></div>
+ <div class="sumrow"><span>Discount</span><strong id="discount">− ₹0.00</strong></div>
+ <div class="sumrow"><span>Delivery charge</span><strong id="deliveryDisplay">₹0.00</strong></div>
+ <div class="sumrow"><span>Delivery waiver</span><strong id="waiverDisplay">− ₹0.00</strong></div>
+ <div class="sumrow total"><span>Payable total</span><strong id="grandTotal">₹0.00</strong></div>
+</div>
+<div class="actions no-print"><button class="primary" id="saveBill">Save bill on this phone</button><button class="secondary" id="printBill">Print / Save PDF</button><button class="secondary" id="shareBill">Share text</button></div>
+<p class="hint">Saved bills remain in this browser on this phone. Clearing browser data may remove them.</p>
+</section>
+<section class="panel preview-panel">
+<h2 class="no-print">5. Receipt preview</h2>
+<div class="receipt-wrap"><div class="receipt" id="receipt">
+ <div class="receipt-title" id="rShop">Shrinath's Kitchen</div><div class="receipt-sub" id="rSubtitle">Maharashtrian</div>
+ <div class="receipt-meta"><span id="rBill">Bill: —</span><span id="rDate"></span></div>
+ <div class="rline"></div><div id="rItems"></div><div class="rline"></div>
+ <div class="sumrow"><span>Subtotal</span><strong id="rSubtotal">₹0.00</strong></div>
+ <div class="sumrow"><span>Discount</span><strong id="rDiscount">− ₹0.00</strong></div>
+ <div class="sumrow"><span>Delivery</span><strong id="rDelivery">₹0.00</strong></div>
+ <div class="sumrow"><span>Delivery waiver</span><strong id="rWaiver">− ₹0.00</strong></div>
+ <div class="rtotal"><span>TOTAL</span><span id="rTotal">₹0.00</span></div>
+ <div class="discount-note" id="rFooter">Thank you! Visit again.</div>
+</div></div>
+</section>
+<section class="panel no-print">
+<h2>6. Saved bills</h2><div id="savedBills" class="saved-list"><div class="empty">No saved bills yet.</div></div>
+<div class="actions"><button class="secondary" id="exportData">Export saved bills</button><button class="danger" id="deleteAll">Delete all saved bills</button></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const money=n=>'₹'+(Number(n)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+let saved=JSON.parse(localStorage.getItem('shriBills')||'[]');
+let lastCalc={};
+function addRow(name='',qty=1,rate=0){
+ const row=document.createElement('div');row.className='item-row';
+ row.innerHTML=`<input class="iname" aria-label="Item name" placeholder="e.g. Kadhi Chawal"><input class="iqty" aria-label="Quantity" type="number" min="0" step="0.01" value="1"><input class="irate" aria-label="Rate" type="number" min="0" step="0.01" value="0"><div class="amount">₹0.00</div><button class="danger remove" aria-label="Remove item">×</button>`;
+ row.querySelector('.iname').value=name;row.querySelector('.iqty').value=qty;row.querySelector('.irate').value=rate;
+ row.querySelectorAll('input').forEach(x=>x.addEventListener('input',calculate));
+ row.querySelector('.remove').onclick=()=>{row.remove();calculate()};
+ $('items').appendChild(row);calculate();
+}
+function getRows(){return [...$('items').children].map(row=>({name:row.querySelector('.iname').value.trim(),qty:+row.querySelector('.iqty').value||0,rate:+row.querySelector('.irate').value||0})).filter(x=>x.name||x.rate||x.qty!==0)}
+function calculate(){
+ const rows=getRows();let subtotal=rows.reduce((s,x)=>s+x.qty*x.rate,0);
+ const type=$('discountType').value,val=Math.max(0,+$('discountValue').value||0);
+ let disc=type==='percent'?subtotal*Math.min(val,100)/100:type==='fixed'?Math.min(val,subtotal):0;
+ const delivery=Math.max(0,+$('delivery').value||0),waiver=Math.min(Math.max(0,+$('deliveryWaiver').value||0),delivery);
+ const total=Math.max(0,subtotal-disc+delivery-waiver);
+ lastCalc={rows,subtotal,disc,delivery,waiver,total};
+ $('items').querySelectorAll('.item-row').forEach(row=>{const q=+row.querySelector('.iqty').value||0,r=+row.querySelector('.irate').value||0;row.querySelector('.amount').textContent=money(q*r)});
+ $('subtotal').textContent=money(subtotal);$('discount').textContent='− '+money(disc);$('deliveryDisplay').textContent=money(delivery);$('waiverDisplay').textContent='− '+money(waiver);$('grandTotal').textContent=money(total);
+ renderReceipt();
+}
+function renderReceipt(){
+ const c=lastCalc,rows=c.rows||[];
+ $('rShop').textContent=$('shop').value||'Shrinath’s Kitchen';$('rSubtitle').textContent=$('subtitle').value;
+ $('rBill').textContent='Bill: '+($('billNo').value||'—');
+ const d=$('date').value;$('rDate').textContent=d?new Date(d+'T00:00:00').toLocaleDateString('en-IN'):'';
+ $('rItems').innerHTML=rows.map(x=>`<div class="ritem"><div><div class="rname">${esc(x.name||'Item')}</div><div class="rsub">${x.qty} × ${money(x.rate)}</div></div><div class="rprice">${money(x.qty*x.rate)}</div></div>`).join('');
+ $('rSubtotal').textContent=money(c.subtotal);$('rDiscount').textContent='− '+money(c.disc);$('rDelivery').textContent=money(c.delivery);$('rWaiver').textContent='− '+money(c.waiver);$('rTotal').textContent=money(c.total);
+ $('rFooter').textContent='Thank you! Visit again.';
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function billObject(){return {id:Date.now(),shop:$('shop').value,subtitle:$('subtitle').value,billNo:$('billNo').value,date:$('date').value,discountType:$('discountType').value,discountValue:$('discountValue').value,delivery:$('delivery').value,deliveryWaiver:$('deliveryWaiver').value,...lastCalc}}
+function save(){const b=billObject();if(!b.rows.length){alert('Add at least one item first.');return}saved.unshift(b);localStorage.setItem('shriBills',JSON.stringify(saved));$('billNo').value='SK-'+String(saved.length).padStart(4,'0');renderSaved();alert('Bill saved on this phone.')}
+function renderSaved(){
+ $('savedBills').innerHTML=saved.length?saved.slice(0,30).map(b=>`<div class="saved"><div><strong>${esc(b.billNo||'Bill')}</strong><small>${esc(b.date||'No date')} · ${esc(b.shop||'')} · ${money(b.total)}</small></div><div class="actions" style="margin:0"><button class="secondary" data-load="${b.id}">Open</button><button class="danger" data-del="${b.id}">×</button></div></div>`).join(''):'<div class="empty">No saved bills yet.</div>';
+ $('savedBills').querySelectorAll('[data-load]').forEach(btn=>btn.onclick=()=>loadBill(+btn.dataset.load));
+ $('savedBills').querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{saved=saved.filter(x=>x.id!==+btn.dataset.del);persist();renderSaved()});
+}
+function persist(){localStorage.setItem('shriBills',JSON.stringify(saved))}
+function loadBill(id){const b=saved.find(x=>x.id===id);if(!b)return;
+ $('shop').value=b.shop;$('subtitle').value=b.subtitle;$('billNo').value=b.billNo;$('date').value=b.date;$('discountType').value=b.discountType;$('discountValue').value=b.discountValue;$('delivery').value=b.delivery;$('deliveryWaiver').value=b.deliveryWaiver;
+ $('items').innerHTML='';b.rows.forEach(x=>addRow(x.name,x.qty,x.rate));calculate();window.scrollTo({top:0,behavior:'smooth'});
+}
+$('addItem').onclick=()=>addRow('',1,0);$('clearItems').onclick=()=>{$('items').innerHTML='';addRow();};
+['shop','subtitle','billNo','date','discountType','discountValue','delivery','deliveryWaiver'].forEach(id=>$(id).addEventListener('input',calculate));
+$('saveBill').onclick=save;$('printBill').onclick=()=>window.print();
+$('shareBill').onclick=async()=>{const c=lastCalc;const txt=[ $('shop').value, ...c.rows.map(x=>`${x.name}: ${x.qty} × ₹${x.rate} = ${money(x.qty*x.rate)}`),`Subtotal: ${money(c.subtotal)}`,`Discount: ${money(c.disc)}`,`Delivery: ${money(c.delivery)}`,`Delivery waiver: ${money(c.waiver)}`,`TOTAL: ${money(c.total)}`].join('\n');if(navigator.share){try{await navigator.share({title:'Bill',text:txt})}catch(e){}}else if(navigator.clipboard){await navigator.clipboard.writeText(txt);alert('Bill text copied.')}else alert(txt)};
+$('exportData').onclick=()=>{const blob=new Blob([JSON.stringify(saved,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shrinaths-bills-backup.json';a.click();URL.revokeObjectURL(a.href)};
+$('deleteAll').onclick=()=>{if(confirm('Delete all saved bills from this phone?')){saved=[];persist();renderSaved()}};
+$('date').value=new Date().toISOString().slice(0,10);addRow();renderSaved();calculate();
+</script>
+</body></html>
