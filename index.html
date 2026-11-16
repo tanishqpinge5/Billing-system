@@ -60,6 +60,10 @@ button{border:0;border-radius:10px;padding:11px 13px;font:700 14px system-ui;cur
  <div class="field"><label>Bill number</label><input id="billNo" placeholder="Auto-generated"></div>
  <div class="field"><label>Date</label><input id="date" type="date"></div>
 </div>
+<div class="grid2" style="margin-top:10px">
+ <div class="field"><label>Customer name (optional)</label><input id="customerName" placeholder="Customer name"></div>
+ <div class="field"><label>Customer WhatsApp number</label><input id="customerPhone" type="tel" inputmode="tel" placeholder="10-digit mobile number"></div>
+</div>
 </section>
 <section class="panel">
 <h2>2. Add items</h2>
@@ -87,7 +91,7 @@ button{border:0;border-radius:10px;padding:11px 13px;font:700 14px system-ui;cur
  <div class="sumrow"><span>Delivery waiver</span><strong id="waiverDisplay">− ₹0.00</strong></div>
  <div class="sumrow total"><span>Payable total</span><strong id="grandTotal">₹0.00</strong></div>
 </div>
-<div class="actions no-print"><button class="primary" id="saveBill">Save bill on this phone</button><button class="secondary" id="printBill">Print / Save PDF</button><button class="secondary" id="shareBill">Share text</button></div>
+<div class="actions no-print"><button class="primary" id="saveBill">Save bill on this phone</button><button class="secondary" id="printBill">Print / Save PDF</button><button class="secondary" id="shareBill">Share text</button><button class="primary" id="whatsappBill">Send on WhatsApp</button></div>
 <p class="hint">Saved bills remain in this browser on this phone. Clearing browser data may remove them.</p>
 </section>
 <section class="panel preview-panel">
@@ -144,7 +148,7 @@ function renderReceipt(){
  $('rFooter').textContent='Thank you! Visit again.';
 }
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function billObject(){return {id:Date.now(),shop:$('shop').value,subtitle:$('subtitle').value,billNo:$('billNo').value,date:$('date').value,discountType:$('discountType').value,discountValue:$('discountValue').value,delivery:$('delivery').value,deliveryWaiver:$('deliveryWaiver').value,...lastCalc}}
+function billObject(){return {id:Date.now(),shop:$('shop').value,subtitle:$('subtitle').value,customerName:$('customerName').value,customerPhone:$('customerPhone').value,billNo:$('billNo').value,date:$('date').value,discountType:$('discountType').value,discountValue:$('discountValue').value,delivery:$('delivery').value,deliveryWaiver:$('deliveryWaiver').value,...lastCalc}}
 function save(){const b=billObject();if(!b.rows.length){alert('Add at least one item first.');return}saved.unshift(b);localStorage.setItem('shriBills',JSON.stringify(saved));$('billNo').value='SK-'+String(saved.length).padStart(4,'0');renderSaved();alert('Bill saved on this phone.')}
 function renderSaved(){
  $('savedBills').innerHTML=saved.length?saved.slice(0,30).map(b=>`<div class="saved"><div><strong>${esc(b.billNo||'Bill')}</strong><small>${esc(b.date||'No date')} · ${esc(b.shop||'')} · ${money(b.total)}</small></div><div class="actions" style="margin:0"><button class="secondary" data-load="${b.id}">Open</button><button class="danger" data-del="${b.id}">×</button></div></div>`).join(''):'<div class="empty">No saved bills yet.</div>';
@@ -153,13 +157,40 @@ function renderSaved(){
 }
 function persist(){localStorage.setItem('shriBills',JSON.stringify(saved))}
 function loadBill(id){const b=saved.find(x=>x.id===id);if(!b)return;
- $('shop').value=b.shop;$('subtitle').value=b.subtitle;$('billNo').value=b.billNo;$('date').value=b.date;$('discountType').value=b.discountType;$('discountValue').value=b.discountValue;$('delivery').value=b.delivery;$('deliveryWaiver').value=b.deliveryWaiver;
+ $('shop').value=b.shop;$('subtitle').value=b.subtitle;$('customerName').value=b.customerName||'';$('customerPhone').value=b.customerPhone||'';$('billNo').value=b.billNo;$('date').value=b.date;$('discountType').value=b.discountType;$('discountValue').value=b.discountValue;$('delivery').value=b.delivery;$('deliveryWaiver').value=b.deliveryWaiver;
  $('items').innerHTML='';b.rows.forEach(x=>addRow(x.name,x.qty,x.rate));calculate();window.scrollTo({top:0,behavior:'smooth'});
 }
 $('addItem').onclick=()=>addRow('',1,0);$('clearItems').onclick=()=>{$('items').innerHTML='';addRow();};
 ['shop','subtitle','billNo','date','discountType','discountValue','delivery','deliveryWaiver'].forEach(id=>$(id).addEventListener('input',calculate));
 $('saveBill').onclick=save;$('printBill').onclick=()=>window.print();
 $('shareBill').onclick=async()=>{const c=lastCalc;const txt=[ $('shop').value, ...c.rows.map(x=>`${x.name}: ${x.qty} × ₹${x.rate} = ${money(x.qty*x.rate)}`),`Subtotal: ${money(c.subtotal)}`,`Discount: ${money(c.disc)}`,`Delivery: ${money(c.delivery)}`,`Delivery waiver: ${money(c.waiver)}`,`TOTAL: ${money(c.total)}`].join('\n');if(navigator.share){try{await navigator.share({title:'Bill',text:txt})}catch(e){}}else if(navigator.clipboard){await navigator.clipboard.writeText(txt);alert('Bill text copied.')}else alert(txt)};
+$('whatsappBill').onclick=()=>{
+ const raw=$('customerPhone').value.trim();
+ let phone=raw.replace(/\D/g,'');
+ if(phone.length===10) phone='91'+phone;
+ if(phone.length<11 || phone.length>15){alert('Enter a valid WhatsApp number with country code, e.g. 9876543210 or 919876543210.');return}
+ const c=lastCalc;
+ if(!c.rows.length){alert('Add at least one item first.');return}
+ const lines=[
+  '*'+($('shop').value||"Shrinath's Kitchen")+'*',
+  $('subtitle').value||'',
+  'Bill: '+($('billNo').value||'—'),
+  'Date: '+($('date').value||''),
+  $('customerName').value.trim()?'Customer: '+$('customerName').value.trim():'',
+  '',
+  ...c.rows.map((x,i)=>`${i+1}. ${x.name} — ${x.qty} × ₹${x.rate} = ${money(x.qty*x.rate)}`),
+  '',
+  'Subtotal: '+money(c.subtotal),
+  'Discount: -'+money(c.disc),
+  'Delivery charge: '+money(c.delivery),
+  'Delivery waiver: -'+money(c.waiver),
+  '*TOTAL: '+money(c.total)+'*',
+  '',
+  'Thank you for ordering from us!'
+ ].filter(Boolean);
+ const url='https://wa.me/'+phone+'?text='+encodeURIComponent(lines.join('\n'));
+ window.open(url,'_blank','noopener');
+};
 $('exportData').onclick=()=>{const blob=new Blob([JSON.stringify(saved,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shrinaths-bills-backup.json';a.click();URL.revokeObjectURL(a.href)};
 $('deleteAll').onclick=()=>{if(confirm('Delete all saved bills from this phone?')){saved=[];persist();renderSaved()}};
 $('date').value=new Date().toISOString().slice(0,10);addRow();renderSaved();calculate();
