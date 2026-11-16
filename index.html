@@ -91,7 +91,7 @@ button{border:0;border-radius:10px;padding:11px 13px;font:700 14px system-ui;cur
  <div class="sumrow"><span>Delivery waiver</span><strong id="waiverDisplay">− ₹0.00</strong></div>
  <div class="sumrow total"><span>Payable total</span><strong id="grandTotal">₹0.00</strong></div>
 </div>
-<div class="actions no-print"><button class="primary" id="saveBill">Save bill on this phone</button><button class="secondary" id="printBill">Print / Save PDF</button><button class="secondary" id="shareBill">Share text</button><button class="primary" id="whatsappBill">Send on WhatsApp</button></div>
+<div class="actions no-print"><button class="primary" id="saveBill">Save bill on this phone</button><button class="secondary" id="printBill">Print / Save PDF</button><button class="secondary" id="shareBill">Share text</button><button class="primary" id="whatsappBill">Send PDF on WhatsApp</button></div>
 <p class="hint">Saved bills remain in this browser on this phone. Clearing browser data may remove them.</p>
 </section>
 <section class="panel preview-panel">
@@ -164,32 +164,60 @@ $('addItem').onclick=()=>addRow('',1,0);$('clearItems').onclick=()=>{$('items').
 ['shop','subtitle','billNo','date','discountType','discountValue','delivery','deliveryWaiver'].forEach(id=>$(id).addEventListener('input',calculate));
 $('saveBill').onclick=save;$('printBill').onclick=()=>window.print();
 $('shareBill').onclick=async()=>{const c=lastCalc;const txt=[ $('shop').value, ...c.rows.map(x=>`${x.name}: ${x.qty} × ₹${x.rate} = ${money(x.qty*x.rate)}`),`Subtotal: ${money(c.subtotal)}`,`Discount: ${money(c.disc)}`,`Delivery: ${money(c.delivery)}`,`Delivery waiver: ${money(c.waiver)}`,`TOTAL: ${money(c.total)}`].join('\n');if(navigator.share){try{await navigator.share({title:'Bill',text:txt})}catch(e){}}else if(navigator.clipboard){await navigator.clipboard.writeText(txt);alert('Bill text copied.')}else alert(txt)};
-$('whatsappBill').onclick=()=>{
- const raw=$('customerPhone').value.trim();
- let phone=raw.replace(/\D/g,'');
+async function createBillPdf(){
+ if(!window.jspdf || !window.jspdf.jsPDF) throw new Error('PDF generator did not load. Connect to the internet and try again.');
+ const {jsPDF}=window.jspdf;
+ const doc=new jsPDF({unit:'mm',format:[80,260]});
+ const left=6,right=74;
+ let y=12;
+ doc.setFont('helvetica','bold');doc.setFontSize(15);
+ doc.text($('shop').value||"Shrinath's Kitchen",40,y,{align:'center',maxWidth:68});y+=7;
+ doc.setFont('helvetica','normal');doc.setFontSize(9);
+ if($('subtitle').value){doc.text($('subtitle').value,40,y,{align:'center'});y+=6}
+ doc.setFontSize(8);
+ doc.text('Bill: '+($('billNo').value||'—'),left,y);
+ doc.text('Date: '+($('date').value||''),right,y,{align:'right'});y+=5;
+ if($('customerName').value.trim()){doc.text('Customer: '+$('customerName').value.trim(),left,y);y+=5}
+ if($('customerPhone').value.trim()){doc.text('Phone: '+$('customerPhone').value.trim(),left,y);y+=5}
+ doc.setLineDash([1,1],0);doc.line(left,y,right,y);y+=6;
+ doc.setFont('helvetica','bold');doc.text('ITEM',left,y);doc.text('AMOUNT',right,y,{align:'right'});y+=5;
+ doc.setFont('helvetica','normal');
+ for(const item of lastCalc.rows){
+  const lines=doc.splitTextToSize(item.name||'Item',43);
+  doc.text(lines,left,y);doc.text(money(item.qty*item.rate),right,y,{align:'right'});
+  y+=Math.max(5,lines.length*4);
+  doc.setFontSize(7);doc.text(`${item.qty} x ${money(item.rate)}`,left,y);doc.setFontSize(8);y+=5;
+ }
+ doc.line(left,y,right,y);y+=6;
+ [['Subtotal',lastCalc.subtotal],['Discount',-lastCalc.disc],['Delivery',lastCalc.delivery],['Delivery waiver',-lastCalc.waiver]].forEach(([label,value])=>{
+  doc.text(label,left,y);doc.text((value<0?'- ':'')+money(Math.abs(value)),right,y,{align:'right'});y+=5;
+ });
+ doc.setFont('helvetica','bold');doc.setFontSize(12);
+ doc.text('TOTAL',left,y+2);doc.text(money(lastCalc.total),right,y+2,{align:'right'});y+=10;
+ doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text('Thank you! Visit again.',40,y,{align:'center'});
+ const blob=doc.output('blob');
+ return new File([blob],`Shrinaths-Kitchen-${($('billNo').value||'Bill').replace(/[^a-z0-9_-]/gi,'_')}.pdf`,{type:'application/pdf'});
+}
+$('whatsappBill').onclick=async()=>{
+ let phone=$('customerPhone').value.trim().replace(/\D/g,'');
  if(phone.length===10) phone='91'+phone;
- if(phone.length<11 || phone.length>15){alert('Enter a valid WhatsApp number with country code, e.g. 9876543210 or 919876543210.');return}
- const c=lastCalc;
- if(!c.rows.length){alert('Add at least one item first.');return}
- const lines=[
-  '*'+($('shop').value||"Shrinath's Kitchen")+'*',
-  $('subtitle').value||'',
-  'Bill: '+($('billNo').value||'—'),
-  'Date: '+($('date').value||''),
-  $('customerName').value.trim()?'Customer: '+$('customerName').value.trim():'',
-  '',
-  ...c.rows.map((x,i)=>`${i+1}. ${x.name} — ${x.qty} × ₹${x.rate} = ${money(x.qty*x.rate)}`),
-  '',
-  'Subtotal: '+money(c.subtotal),
-  'Discount: -'+money(c.disc),
-  'Delivery charge: '+money(c.delivery),
-  'Delivery waiver: -'+money(c.waiver),
-  '*TOTAL: '+money(c.total)+'*',
-  '',
-  'Thank you for ordering from us!'
- ].filter(Boolean);
- const url='https://wa.me/'+phone+'?text='+encodeURIComponent(lines.join('\n'));
- window.open(url,'_blank','noopener');
+ if(phone.length<11 || phone.length>15){alert('Enter a valid WhatsApp number, e.g. 9876543210.');return}
+ if(!lastCalc.rows.length){alert('Add at least one item first.');return}
+ const btn=$('whatsappBill');btn.disabled=true;btn.textContent='Creating PDF…';
+ try{
+  const file=await createBillPdf();
+  const caption=`${$('shop').value||"Shrinath's Kitchen"} bill ${$('billNo').value||''} — Total ${money(lastCalc.total)}`;
+  if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+   await navigator.share({files:[file],title:'Shrinath’s Kitchen Bill',text:caption});
+  }else{
+   const objectUrl=URL.createObjectURL(file);
+   const a=document.createElement('a');a.href=objectUrl;a.download=file.name;a.click();
+   setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
+   window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(caption+'\\nPlease find the bill PDF attached.'),'_blank','noopener');
+   alert('PDF downloaded. Attach it in the WhatsApp chat that opened.');
+  }
+ }catch(e){if(e.name!=='AbortError')alert(e.message||'Unable to create/share PDF.');}
+ finally{btn.disabled=false;btn.textContent='Send PDF on WhatsApp';}
 };
 $('exportData').onclick=()=>{const blob=new Blob([JSON.stringify(saved,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shrinaths-bills-backup.json';a.click();URL.revokeObjectURL(a.href)};
 $('deleteAll').onclick=()=>{if(confirm('Delete all saved bills from this phone?')){saved=[];persist();renderSaved()}};
