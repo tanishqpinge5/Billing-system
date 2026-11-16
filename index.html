@@ -50,7 +50,7 @@ button{border:0;border-radius:10px;padding:11px 13px;font:700 14px system-ui;cur
 </style>
 </head>
 <body>
-<header><h1>Shrinath's Kitchen — Bill Maker</h1><p>Offline bill creator · Works on your phone · Data stays on this device</p></header>
+<header><h1>Shrinath's Kitchen — Bill Maker</h1><p>Cloud bill creator · Bills synced with MongoDB</p></header>
 <main>
 <section class="panel">
 <h2>1. Shop & bill details</h2>
@@ -91,8 +91,8 @@ button{border:0;border-radius:10px;padding:11px 13px;font:700 14px system-ui;cur
  <div class="sumrow"><span>Delivery waiver</span><strong id="waiverDisplay">− ₹0.00</strong></div>
  <div class="sumrow total"><span>Payable total</span><strong id="grandTotal">₹0.00</strong></div>
 </div>
-<div class="actions no-print"><button class="primary" id="saveBill">Save bill on this phone</button><button class="secondary" id="printBill">Print / Save PDF</button><button class="secondary" id="shareBill">Share text</button><button class="primary" id="whatsappBill">Send PDF on WhatsApp</button></div>
-<p class="hint">Saved bills remain in this browser on this phone. Clearing browser data may remove them.</p>
+<div class="actions no-print"><button class="primary" id="saveBill">Save bill to cloud</button><button class="secondary" id="printBill">Print / Save PDF</button><button class="secondary" id="shareBill">Share text</button><button class="primary" id="whatsappBill">Send PDF on WhatsApp</button></div>
+<p class="hint">Bills are stored in your MongoDB database and can be loaded when you reopen this app.</p>
 </section>
 <section class="panel preview-panel">
 <h2 class="no-print">5. Receipt preview</h2>
@@ -110,7 +110,7 @@ button{border:0;border-radius:10px;padding:11px 13px;font:700 14px system-ui;cur
 </section>
 <section class="panel no-print">
 <h2>6. Saved bills</h2><div id="savedBills" class="saved-list"><div class="empty">No saved bills yet.</div></div>
-<div class="actions"><button class="secondary" id="exportData">Export saved bills</button><button class="danger" id="deleteAll">Delete all saved bills</button></div>
+<div class="actions"><button class="secondary" id="exportData">Export saved bills</button></div>
 </section>
 </main>
 <script>
@@ -149,13 +149,63 @@ function renderReceipt(){
 }
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function billObject(){return {id:Date.now(),shop:$('shop').value,subtitle:$('subtitle').value,customerName:$('customerName').value,customerPhone:$('customerPhone').value,billNo:$('billNo').value,date:$('date').value,discountType:$('discountType').value,discountValue:$('discountValue').value,delivery:$('delivery').value,deliveryWaiver:$('deliveryWaiver').value,...lastCalc}}
-function save(){const b=billObject();if(!b.rows.length){alert('Add at least one item first.');return}saved.unshift(b);localStorage.setItem('shriBills',JSON.stringify(saved));$('billNo').value='SK-'+String(saved.length).padStart(4,'0');renderSaved();alert('Bill saved on this phone.')}
+async function save(){
+ const b=billObject();
+ if(!b.rows.length){alert('Add at least one item first.');return}
+ const btn=$('saveBill');btn.disabled=true;btn.textContent='Saving…';
+ try{
+  const res=await fetch('/api/bills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  const data=await res.json();
+  if(!res.ok)throw new Error(data.error||'Cloud save failed');
+  saved=[data.bill,...saved.filter(x=>x.id!==b.id)];
+  persist();renderSaved();
+  $('billNo').value='SK-'+String(saved.length).padStart(4,'0');
+  alert('Bill saved to MongoDB successfully!');
+ }catch(error){
+  alert('Could not save to cloud: '+error.message);
+ }finally{
+  btn.disabled=false;btn.textContent='Save bill to cloud';
+ }
+}
 function renderSaved(){
  $('savedBills').innerHTML=saved.length?saved.slice(0,30).map(b=>`<div class="saved"><div><strong>${esc(b.billNo||'Bill')}</strong><small>${esc(b.date||'No date')} · ${esc(b.shop||'')} · ${money(b.total)}</small></div><div class="actions" style="margin:0"><button class="secondary" data-load="${b.id}">Open</button><button class="danger" data-del="${b.id}">×</button></div></div>`).join(''):'<div class="empty">No saved bills yet.</div>';
  $('savedBills').querySelectorAll('[data-load]').forEach(btn=>btn.onclick=()=>loadBill(+btn.dataset.load));
- $('savedBills').querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{saved=saved.filter(x=>x.id!==+btn.dataset.del);persist();renderSaved()});
+ $('savedBills').querySelectorAll('[data-del]').forEach(btn=>btn.onclick=async()=>{
+  const id=Number(btn.dataset.del);
+  if(!confirm('Delete this bill from MongoDB?'))return;
+  try{
+   const res=await fetch('/api/bills?id='+encodeURIComponent(id),{method:'DELETE'});
+   if(!res.ok)throw new Error('Delete failed');
+   saved=saved.filter(x=>x.id!==id);persist();renderSaved();
+  }catch(error){alert('Could not delete bill: '+error.message)}
+ });
 }
 function persist(){localStorage.setItem('shriBills',JSON.stringify(saved))}
+async function syncCloud(){
+ const localBills=JSON.parse(localStorage.getItem('shriBills')||'[]');
+ try{
+  let res=await fetch('/api/bills',{cache:'no-store'});
+  let data=await res.json();
+  if(!res.ok)throw new Error(data.error||'Could not load bills');
+  let cloudBills=data.bills||[];
+  // One-time migration: copy old phone-only bills to MongoDB if the cloud is empty.
+  if(cloudBills.length===0 && localBills.length){
+   for(const bill of localBills){
+    const upload=await fetch('/api/bills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(bill)});
+    if(!upload.ok)throw new Error('Could not migrate existing saved bills');
+   }
+   res=await fetch('/api/bills',{cache:'no-store'});
+   data=await res.json();
+   if(!res.ok)throw new Error(data.error||'Could not reload migrated bills');
+   cloudBills=data.bills||[];
+  }
+  saved=cloudBills;
+  persist();renderSaved();
+ }catch(error){
+  console.error('Cloud sync failed:',error);
+  $('savedBills').innerHTML='<div class="empty">Cloud connection failed. Check the Vercel deployment and MongoDB Network Access settings. Existing bills on this browser have not been erased.</div>';
+ }
+}
 function loadBill(id){const b=saved.find(x=>x.id===id);if(!b)return;
  $('shop').value=b.shop;$('subtitle').value=b.subtitle;$('customerName').value=b.customerName||'';$('customerPhone').value=b.customerPhone||'';$('billNo').value=b.billNo;$('date').value=b.date;$('discountType').value=b.discountType;$('discountValue').value=b.discountValue;$('delivery').value=b.delivery;$('deliveryWaiver').value=b.deliveryWaiver;
  $('items').innerHTML='';b.rows.forEach(x=>addRow(x.name,x.qty,x.rate));calculate();window.scrollTo({top:0,behavior:'smooth'});
@@ -252,7 +302,8 @@ $('whatsappBill').onclick=async()=>{
  finally{btn.disabled=false;btn.textContent='Send PDF on WhatsApp';}
 };
 $('exportData').onclick=()=>{const blob=new Blob([JSON.stringify(saved,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shrinaths-bills-backup.json';a.click();URL.revokeObjectURL(a.href)};
-$('deleteAll').onclick=()=>{if(confirm('Delete all saved bills from this phone?')){saved=[];persist();renderSaved()}};
+
+$('date').value=new Date().toISOString().slice(0,10);addRow();renderSaved();calculate();syncCloud();
 $('date').value=new Date().toISOString().slice(0,10);addRow();renderSaved();calculate();
 </script>
 </body></html>
